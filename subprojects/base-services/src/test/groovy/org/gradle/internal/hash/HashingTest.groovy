@@ -16,16 +16,81 @@
 
 package org.gradle.internal.hash
 
+
 import spock.lang.Specification
 
+import static java.lang.Thread.currentThread
+import static java.util.concurrent.CompletableFuture.supplyAsync
+import static java.util.concurrent.Executors.newFixedThreadPool
+
 class HashingTest extends Specification {
+    def 'cannot call hash multiple times'() {
+        given:
+        def hasher = Hashing.newHasher()
+        hasher.putInt(1)
+
+        when:
+        hasher.hash()
+        hasher.hash()
+
+        then:
+        thrown(IllegalStateException)
+    }
+
+    def 'nested hashers works'() {
+        when:
+        def hasher = Hashing.newHasher()
+        hasher.putInt(1)
+
+        and:
+        def nestedHasher = Hashing.newHasher().with(true) { it.putInt(1) }
+
+        then:
+        nestedHasher.hash() == hasher.hash()
+    }
+
+    def 'hasher works without calling final hash method'() {
+        given:
+        def value = ('a'..'z').join()
+
+        when:
+        def hasher1 = Hashing.newHasher()
+        hasher1.putString(value)
+        def hash = hasher1.hash()
+
+        and:
+        def hasher2 = Hashing.newHasher()
+        hasher2.putString(value)
+        // no call to hasher2.hash()
+
+        and:
+        def hasher3 = Hashing.newHasher()
+        hasher3.putString(value)
+        def hash3 = hasher3.hash()
+
+        then:
+        hash == hash3
+    }
+
+    def 'hasher can be used from multiple threads'() {
+        given:
+        def threadRange = 1..100
+
+        when:
+        def hashes = threadRange.collect {
+            supplyAsync({ Hashing.hashString(currentThread().name) }, newFixedThreadPool(threadRange.size()))
+        }*.join().toSet()
+
+        then:
+        hashes.size() == threadRange.size()
+    }
 
     def 'null does not collide with other values'() {
         expect:
         def hasher = Hashing.newHasher()
         hasher.putNull()
         def hash = hasher.hash()
-        hash != hashKey("abc")
+        hash != Hashing.hashString("abc")
     }
 
     def 'hash collision for bytes'() {
@@ -38,12 +103,6 @@ class HashingTest extends Specification {
     def 'hash collision for strings'() {
         expect:
         hashStrings(["abc", "de"]) != hashStrings(["ab", "cde"])
-    }
-
-    def hashKey(String value) {
-        def hasher = Hashing.newHasher()
-        hasher.putString(value)
-        return hasher.hash()
     }
 
     def hashStrings(List<String> strings) {
