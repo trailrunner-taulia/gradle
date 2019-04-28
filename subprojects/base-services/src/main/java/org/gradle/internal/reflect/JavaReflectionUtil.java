@@ -18,7 +18,9 @@ package org.gradle.internal.reflect;
 
 import org.gradle.internal.UncheckedException;
 
+import javax.annotation.Nullable;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 
 public class JavaReflectionUtil {
 
@@ -55,4 +57,17 @@ public class JavaReflectionUtil {
             throw UncheckedException.throwAsUncheckedException(e);
         }
     }
+
+    /**
+     * Return the corresponding Field, or null
+     */
+    @Nullable
+    public static Field getFieldOrNull(Class<?> parent, String fieldName) {
+        try {
+            return parent.getDeclaredField(fieldName);
+        } catch (NoSuchFieldException e) {
+            return null;
+        }
+    }
+
 }

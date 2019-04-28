@@ -1,5 +1,5 @@
 /*
- * Copyright 2011 the original author or authors.
+ * Copyright 2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -126,8 +126,13 @@ class CollectionUtilsTest extends Specification {
         collect([1, 2, 3] as Object[], transformer { it * 2 }) == [2, 4, 6]
     }
 
-    def "collect iterable"() {
+    def "collect non-collection Iterable"() {
         expect:
+        def nonCollectionIterable = [iterator: { [1, 2, 3].iterator() }] as Iterable
+        collect(nonCollectionIterable, transformer { it * 2 }) == [2, 4, 6]
+    }
+
+    def "collect of collection iterable"() {
         collect([1, 2, 3] as Iterable, transformer { it * 2 }) == [2, 4, 6]
     }
 

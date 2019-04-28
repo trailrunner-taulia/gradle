@@ -192,12 +192,14 @@ public abstract class CollectionUtils {
         return collect(Arrays.asList(list), transformer);
     }
 
-    public static <R, I> List<R> collect(List<? extends I> list, Transformer<? extends R, ? super I> transformer) {
-        return collect(list, new ArrayList<R>(list.size()), transformer);
-    }
-
     public static <R, I> List<R> collect(Iterable<? extends I> source, Transformer<? extends R, ? super I> transformer) {
-        return collect(source, new LinkedList<R>(), transformer);
+        if (source instanceof Collection<?>) {
+            //noinspection unchecked
+            int size = ((Collection<? extends I>) source).size();
+            return collect(source, new ArrayList<R>(size), transformer);
+        } else {
+            return collect(source, new LinkedList<R>(), transformer);
+        }
     }
 
     public static <R, I, C extends Collection<R>> C collect(Iterable<? extends I> source, C destination, Transformer<? extends R, ? super I> transformer) {

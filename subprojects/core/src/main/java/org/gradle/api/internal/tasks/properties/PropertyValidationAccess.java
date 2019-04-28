@@ -19,14 +19,18 @@ package org.gradle.api.internal.tasks.properties;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Equivalence;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.reflect.TypeToken;
+import org.gradle.api.DomainObjectCollection;
 import org.gradle.api.Named;
 import org.gradle.api.NonNullApi;
 import org.gradle.api.Task;
 import org.gradle.api.artifacts.transform.CacheableTransform;
 import org.gradle.api.artifacts.transform.TransformAction;
+import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.internal.TaskInternal;
 import org.gradle.api.internal.project.taskfactory.TaskClassInfoStore;
+import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.InputDirectory;
 import org.gradle.api.tasks.InputFile;
@@ -46,29 +50,38 @@ import org.gradle.internal.service.scopes.PluginServiceRegistry;
 
 import javax.annotation.Nullable;
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 
 import static org.gradle.api.internal.tasks.properties.ModifierAnnotationCategory.NORMALIZATION;
+import static org.gradle.internal.reflect.JavaReflectionUtil.getFieldOrNull;
 
 /**
  * Class for easy access to property validation from the validator task.
  */
 @NonNullApi
 public class PropertyValidationAccess {
-    private final static Map<Class<? extends Annotation>, ? extends PropertyValidator> PROPERTY_VALIDATORS = ImmutableMap.of(
+    private static final Map<Class<? extends Annotation>, ? extends PropertyValidator> PROPERTY_VALIDATORS = ImmutableMap.of(
         InputFiles.class, new MissingNormalizationValidator(false),
         InputFile.class, new MissingNormalizationValidator(false),
         InputDirectory.class, new MissingNormalizationValidator(false)
     );
-    private final static Map<Class<? extends Annotation>, ? extends PropertyValidator> STRICT_PROPERTY_VALIDATORS = ImmutableMap.of(
+    private static final Map<Class<? extends Annotation>, ? extends PropertyValidator> STRICT_PROPERTY_VALIDATORS = ImmutableMap.of(
         InputFiles.class, new MissingNormalizationValidator(true),
         InputFile.class, new MissingNormalizationValidator(true),
         InputDirectory.class, new MissingNormalizationValidator(true)
+    );
+    private static final ImmutableSet<? extends Type> MUTABLE_NON_FINAL_TYPES = ImmutableSet.of( // TODO do it via annotations instead?
+        ConfigurableFileCollection.class,
+        Property.class,
+        DomainObjectCollection.class
     );
     private static final PropertyValidationAccess INSTANCE = new PropertyValidationAccess();
 
@@ -233,16 +246,33 @@ public class PropertyValidationAccess {
             typeMetadata.collectValidationFailures(getPropertyName(), validationContext);
             for (PropertyMetadata propertyMetadata : typeMetadata.getPropertiesMetadata()) {
                 String qualifiedPropertyName = getQualifiedPropertyName(propertyMetadata.getPropertyName());
-                Class<? extends Annotation> propertyType = propertyMetadata.getPropertyType();
-                PropertyValidator validator = stricterValidation ? STRICT_PROPERTY_VALIDATORS.get(propertyType) : PROPERTY_VALIDATORS.get(propertyType);
+                Class<? extends Annotation> annotationType = propertyMetadata.getPropertyType();
+                PropertyValidator validator = stricterValidation ? STRICT_PROPERTY_VALIDATORS.get(annotationType) : PROPERTY_VALIDATORS.get(annotationType);
                 if (validator != null) {
-                    validator.validate(null, propertyMetadata, validationContext);
+                    validator.validate(propertyMetadata, validationContext);
                 }
-                if (propertyMetadata.getPropertyType().equals(Nested.class)) {
+                if (Nested.class.equals(propertyMetadata.getPropertyType())) {
                     TypeToken<?> beanType = unpackProvider(propertyMetadata.getGetterMethod());
                     nodeFactory.createAndAddToQueue(this, qualifiedPropertyName, beanType, queue);
                 }
+
+                validateMutableNonFinalField(topLevelBean, validationContext, propertyMetadata);
             }
+        }
+
+        private void validateMutableNonFinalField(Class<?> topLevelBean, ParameterValidationContext validationContext, PropertyMetadata propertyMetadata) {
+            Field propertyField = getFieldOrNull(topLevelBean, propertyMetadata.getPropertyName());
+            if (isMutableNonFinalField(propertyField)) {
+                // FIXME rewrite warning
+                // TODO what if there is no setter, just a mutable, non-final field?
+                validationContext.visitError(null, propertyMetadata.getPropertyName(), "is a mutable field with a setter: please make it final and mutate it via its getter method");
+            }
+        }
+
+        private boolean isMutableNonFinalField(@Nullable Field propertyField) {
+            return propertyField != null
+                && MUTABLE_NON_FINAL_TYPES.contains(propertyField.getType()) // TODO instanceof or just direct match?
+                && !Modifier.isFinal(propertyField.getModifiers());
         }
 
         private static TypeToken<?> unpackProvider(Method method) {
@@ -323,7 +353,7 @@ public class PropertyValidationAccess {
     }
 
     private interface PropertyValidator {
-        void validate(@Nullable String ownerPath, PropertyMetadata metadata, ParameterValidationContext validationContext);
+        void validate(PropertyMetadata metadata, ParameterValidationContext validationContext);
     }
 
     private static class MissingNormalizationValidator implements PropertyValidator {
@@ -334,9 +364,9 @@ public class PropertyValidationAccess {
         }
 
         @Override
-        public void validate(@Nullable String ownerPath, PropertyMetadata metadata, ParameterValidationContext validationContext) {
+        public void validate(PropertyMetadata metadata, ParameterValidationContext validationContext) {
             if (stricterValidation && !metadata.hasAnnotationForCategory(NORMALIZATION)) {
-                validationContext.visitError(ownerPath, metadata.getPropertyName(), "is missing a normalization annotation, defaulting to PathSensitivity.ABSOLUTE");
+                validationContext.visitError(null, metadata.getPropertyName(), "is missing a normalization annotation, defaulting to PathSensitivity.ABSOLUTE");
             }
         }
     }
