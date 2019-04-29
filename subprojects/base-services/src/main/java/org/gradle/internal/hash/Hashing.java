@@ -198,17 +198,14 @@ public class Hashing {
     }
 
     private static class MessageDigestHasher implements PrimitiveHasher {
-        private final MessageDigest digest;
-        private boolean done;
+        private MessageDigest digest;
 
         public MessageDigestHasher(MessageDigest digest) {
             this.digest = digest;
         }
 
         private void checkNotDone() {
-            if (done) {
-                throw new IllegalStateException("Cannot reuse hasher");
-            }
+            Preconditions.checkState(digest != null, "Cannot reuse hasher!");
         }
 
         @Override
@@ -249,7 +246,6 @@ public class Hashing {
 
         @Override
         public void putBoolean(boolean value) {
-            checkNotDone();
             putByte((byte) (value ? 1 : 0));
         }
 
@@ -265,9 +261,11 @@ public class Hashing {
 
         @Override
         public HashCode hash() {
-            done = true;
+            checkNotDone();
             byte[] bytes = digest.digest();
-            return HashCode.fromBytesNoCopy(bytes);
+            HashCode result = HashCode.fromBytesNoCopy(bytes);
+            digest = null;
+            return result;
         }
     }
 
