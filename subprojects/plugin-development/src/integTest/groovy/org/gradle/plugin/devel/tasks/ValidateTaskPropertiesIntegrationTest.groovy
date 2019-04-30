@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 the original author or authors.
+ * Copyright 2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,11 @@ package org.gradle.plugin.devel.tasks
 
 import org.gradle.api.artifacts.transform.InputArtifact
 import org.gradle.api.artifacts.transform.InputArtifactDependencies
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.FileCollection
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.model.ReplacedBy
+import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Console
 import org.gradle.api.tasks.Destroys
 import org.gradle.api.tasks.Input
@@ -38,6 +40,7 @@ import org.gradle.api.tasks.options.OptionValues
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
+import org.intellij.lang.annotations.Language
 import spock.lang.Unroll
 
 import javax.inject.Inject
@@ -385,6 +388,59 @@ class ValidateTaskPropertiesIntegrationTest extends AbstractIntegrationSpec {
         succeeds "validateTaskProperties"
 
         file("build/reports/task-properties/report.txt").text == ""
+    }
+
+
+    @Unroll
+    def "report setters for mutable type #type"() {
+        @Language("JAVA") myTask = """
+            import org.gradle.api.DefaultTask;
+            import org.gradle.api.tasks.InputFiles;
+
+            public class MyTask extends DefaultTask {
+                private ${type} sources;
+                
+                @InputFiles
+                public ${type} getSources() { return sources; } 
+                public void setSources(${type} sources) { this.sources = sources; } 
+            }
+        """
+        file("src/main/java/MyTask.java") << myTask
+
+        when:
+        fails "validateTaskProperties"
+
+        then:
+        file("build/reports/task-properties/report.txt").text == """
+            Warning: Type 'MyTask': Support for property setters for type '${type.replaceAll("<.+>", "")}' will be removed in a future release. Please consider making 'sources' final.
+        """.stripIndent().trim()
+
+        where:
+        type << [ConfigurableFileCollection.name, "${Property.name}<${String.name}>"]
+    }
+
+    @Unroll
+    def "don't report when non-final field doesn't have setters for type #type"() {
+        @Language("JAVA") myTask = """
+            import org.gradle.api.DefaultTask;
+            import org.gradle.api.tasks.InputFiles;
+
+            public class MyTask extends DefaultTask {
+                private final ${type} sources;
+                
+                MyTask() { sources = null; }
+                
+                @InputFiles
+                public ${type} getSources() { return sources; } 
+            }
+        """
+        file("src/main/java/MyTask.java") << myTask
+
+        expect:
+        succeeds "validateTaskProperties"
+
+        where:
+        type << [ConfigurableFileCollection.name, "${Property.name}<${String.name}>"]
     }
 
     def "detects problems with file inputs"() {
