@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 the original author or authors.
+ * Copyright 2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,25 +28,30 @@ class HashingTest extends Specification {
         given:
         def hasher = Hashing.newHasher()
         hasher.putInt(1)
+        hasher.hash()
 
         when:
         hasher.hash()
-        hasher.hash()
 
         then:
-        thrown(IllegalStateException)
+        thrown(Exception)
     }
 
-    def 'nested hashers works'() {
+    def 'hashers can be nested'() {
         when:
-        def hasher = Hashing.newHasher()
-        hasher.putInt(1)
+        def hasher1 = Hashing.newHasher()
+        hasher1.putInt(1)
 
         and:
-        def nestedHasher = Hashing.newHasher().with(true) { it.putInt(1) }
+        def hasher2 = Hashing.newHasher()
+        hasher2.putInt(1)
+
+        then: "closing them in reverse order"
+        def hash2 = hasher2.hash()
+        def hash1 = hasher1.hash()
 
         then:
-        nestedHasher.hash() == hasher.hash()
+        hash2 == hash1
     }
 
     def 'hasher works without calling final hash method'() {

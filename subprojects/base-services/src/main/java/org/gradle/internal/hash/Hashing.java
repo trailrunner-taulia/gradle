@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 the original author or authors.
+ * Copyright 2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -204,26 +204,23 @@ public class Hashing {
             this.digest = digest;
         }
 
-        private void checkNotDone() {
-            Preconditions.checkState(digest != null, "Cannot reuse hasher!");
+        private MessageDigest getDigest() {
+            return Preconditions.checkNotNull(digest, "Cannot reuse hasher!");
         }
 
         @Override
         public void putByte(byte b) {
-            checkNotDone();
-            digest.update(b);
+            getDigest().update(b);
         }
 
         @Override
         public void putBytes(byte[] bytes) {
-            checkNotDone();
-            digest.update(bytes);
+            getDigest().update(bytes);
         }
 
         @Override
         public void putBytes(byte[] bytes, int off, int len) {
-            checkNotDone();
-            digest.update(bytes, off, len);
+            getDigest().update(bytes, off, len);
         }
 
         @Override
@@ -261,11 +258,9 @@ public class Hashing {
 
         @Override
         public HashCode hash() {
-            checkNotDone();
-            byte[] bytes = digest.digest();
-            HashCode result = HashCode.fromBytesNoCopy(bytes);
+            byte[] bytes = getDigest().digest();
             digest = null;
-            return result;
+            return HashCode.fromBytesNoCopy(bytes);
         }
     }
 
