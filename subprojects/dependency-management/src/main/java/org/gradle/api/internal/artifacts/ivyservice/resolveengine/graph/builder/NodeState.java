@@ -84,6 +84,7 @@ public class NodeState implements DependencyGraphNode {
     private boolean evicted;
     private Set<ModuleIdentifier> upcomingNoLongerPendingConstraints;
     private boolean virtualPlatformNeedsRefresh;
+    private ExcludeSpec cachedNodeExclusions;
 
     public NodeState(Long resultId, ResolvedConfigurationIdentifier id, ComponentState component, ResolveState resolveState, ConfigurationMetadata md) {
         this.resultId = resultId;
@@ -453,7 +454,10 @@ public class NodeState implements DependencyGraphNode {
     }
 
     private ExcludeSpec computeNodeExclusions() {
-        return moduleExclusions.excludeAny(metaData.getExcludes());
+        if (cachedNodeExclusions == null) {
+            cachedNodeExclusions = moduleExclusions.excludeAny(metaData.getExcludes());
+        }
+        return cachedNodeExclusions;
     }
 
     private ExcludeSpec computeExclusionFilter(List<EdgeState> incomingEdges, ExcludeSpec nodeExclusions) {
