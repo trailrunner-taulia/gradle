@@ -28,6 +28,9 @@ import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Ordering;
 import com.google.common.collect.SetMultimap;
 import com.google.common.collect.Sets;
+import org.gradle.api.DomainObjectCollection;
+import org.gradle.api.file.ConfigurableFileCollection;
+import org.gradle.api.provider.Property;
 import org.gradle.cache.internal.CrossBuildInMemoryCache;
 import org.gradle.cache.internal.CrossBuildInMemoryCacheFactory;
 import org.gradle.internal.reflect.AnnotationCategory;
@@ -44,6 +47,8 @@ import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.Parameter;
+import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
@@ -82,6 +87,12 @@ public class DefaultTypeAnnotationMetadataStore implements TypeAnnotationMetadat
         public void visitValidationFailures(@Nullable String ownerPath, ParameterValidationContext validationContext) {
         }
     };
+
+    private static final ImmutableSet<? extends Type> MUTABLE_NON_FINAL_TYPES = ImmutableSet.of(
+        ConfigurableFileCollection.class,
+        DomainObjectCollection.class,
+        Property.class
+    );
 
     private final ImmutableMap<Class<? extends Annotation>, AnnotationCategory> propertyAnnotationCategories;
     private final Set<Class<? extends Annotation>> recordedTypeAnnotations;
@@ -311,6 +322,7 @@ public class DefaultTypeAnnotationMetadataStore implements TypeAnnotationMetadat
             return;
         } else if (accessorType == PropertyAccessorType.SETTER) {
             validateNotAnnotated("setter", method, annotations.keySet(), errorsBuilder);
+            validateSetterForMutableType(method, errorsBuilder, accessorType);
             return;
         }
 
@@ -347,6 +359,18 @@ public class DefaultTypeAnnotationMetadataStore implements TypeAnnotationMetadat
         for (Annotation annotation : annotations.values()) {
             metadataBuilder.declareAnnotation(annotation);
         }
+    }
+
+    private static void validateSetterForMutableType(Method method, ValidationErrorsBuilder errorsBuilder, PropertyAccessorType accessorType) {
+        Class<?> setterType = getSetterType(method);
+        if (MUTABLE_NON_FINAL_TYPES.contains(setterType)) {
+            errorsBuilder.recordError(String.format("Support for property setters for type '%s' will be removed in a future release. Please consider making '%s' final.", setterType.getName(), accessorType.propertyNameFor(method)));
+        }
+    }
+
+    private static Class<?> getSetterType(Method method) {
+        Parameter firstParameter = method.getParameters()[0];
+        return firstParameter.getType();
     }
 
     private void visitSuperTypes(Class<?> type, Consumer<? super TypeAnnotationMetadata> visitor) {
